@@ -3,57 +3,64 @@ let fileBuffer = null;
 let generatedBlob = null;
 let downloadName = "result.docx";
 
-// --- TIỆN ÍCH LOG ---
+// --- DOM ELEMENTS ---
+const els = {
+    logArea: document.getElementById('logArea'),
+    fileInput: document.getElementById('fileInput'),
+    fileStatus: document.getElementById('fileStatus'),
+    ocrInput: document.getElementById('ocrInput'),
+    ocrStatus: document.getElementById('ocrStatus'),
+    btnTabForm: document.getElementById('btnTabForm'),
+    btnTabJson: document.getElementById('btnTabJson'),
+    tabForm: document.getElementById('tabForm'),
+    tabJson: document.getElementById('tabJson'),
+    inpTien: document.getElementById('inpTien'),
+    moneyPreview: document.getElementById('moneyPreview'),
+    btnProcess: document.getElementById('btnProcess'),
+    previewContainer: document.getElementById('previewContainer'),
+    btnDownload: document.getElementById('btnDownload'),
+    inpApiKey: document.getElementById('inpApiKey')
+};
+
+// --- LOGGING ---
 const log = (msg, type = 'info') => {
-    const logArea = document.getElementById('logArea');
     const color = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
     const time = new Date().toLocaleTimeString();
-    logArea.innerHTML += `<div class="${color} mb-1 border-b border-slate-700 pb-1">[${time}] ${msg}</div>`;
-    logArea.scrollTop = logArea.scrollHeight;
+    els.logArea.innerHTML += `<div class="${color} mb-1 border-b border-slate-700 pb-1">[${time}] ${msg}</div>`;
+    els.logArea.scrollTop = els.logArea.scrollHeight;
     console.log(`[${type}] ${msg}`);
 };
 
-// --- XỬ LÝ TIỀN (Làm tròn 54.321 -> 55.000) ---
+log("Hệ thống đã sẵn sàng!", 'success');
+
+// --- XỬ LÝ TIỀN ---
 const processMoney = (val) => {
     if (!val) return { raw: 0, fmt: '', text: '' };
-    // Xóa các ký tự không phải số (ví dụ: "100.000 đ") trước khi parse
-    const cleanVal = String(val).replace(/[^0-9.]/g, '');
+    const cleanVal = String(val).replace(/[^0-9]/g, '');
     let num = parseFloat(cleanVal);
     if (isNaN(num)) return { raw: 0, fmt: val, text: '' };
 
-    // Làm tròn lên hàng nghìn
     num = Math.ceil(num / 1000) * 1000;
     const fmt = num.toLocaleString('vi-VN');
     const text = `(Bằng chữ: ... đồng)`; 
     return { raw: num, fmt, text };
 };
 
-// --- HÀM GỌI GEMINI OCR ---
+// --- API GEMINI (ĐÃ NÂNG CẤP) ---
 async function callGeminiOCR(base64Image) {
-    const apiKey = document.getElementById('inpApiKey').value.trim();
+    const apiKey = els.inpApiKey.value.trim();
     if (!apiKey) {
-        alert("Vui lòng nhập API Key!");
+        alert("Chưa có API Key!");
         return null;
     }
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
     
-    // Prompt tối ưu hóa để lấy JSON chuẩn xác
+    // Prompt chi tiết
     const prompt = `
-    Bạn là một trợ lý nhập liệu AI. Hãy trích xuất thông tin từ bức ảnh hóa đơn/hợp đồng này.
-    
-    YÊU CẦU QUAN TRỌNG:
-    1. Chỉ trả về duy nhất một chuỗi JSON hợp lệ. Không được kèm theo bất kỳ văn bản giải thích hay markdown (\`\`\`json) nào.
-    2. Nếu trường nào không tìm thấy, hãy để chuỗi rỗng "".
-    3. Định dạng JSON cần trả về:
-    {
-        "MA_KH": "Mã khách hàng hoặc Mã hợp đồng",
-        "TEN_KH": "Họ và tên khách hàng (Viết Hoa Chữ Cái Đầu)",
-        "SO_TIEN": "Số tiền bằng số (Chỉ lấy số, không lấy chữ 'đ' hay 'VND', ví dụ: 500000)",
-        "SDT": "Số điện thoại liên hệ",
-        "DIA_CHI": "Địa chỉ khách hàng",
-        "NOI_DUNG": "Nội dung thu chi hoặc lý do thanh toán"
-    }
+    Trích xuất thông tin hóa đơn. Trả về JSON thuần.
+    Fields: MA_KH, TEN_KH (Viết Hoa Chữ Cái Đầu), SO_TIEN (số nguyên, bỏ chữ đ), SDT, DIA_CHI, NOI_DUNG.
+    Nếu không có thì để trống.
     `;
 
     const payload = {
@@ -62,7 +69,14 @@ async function callGeminiOCR(base64Image) {
                 { text: prompt },
                 { inline_data: { mime_type: "image/jpeg", data: base64Image } }
             ]
-        }]
+        }],
+        // CẤU HÌNH AN TOÀN (QUAN TRỌNG ĐỂ KHÔNG BỊ BLOCK TEXT)
+        safetySettings: [
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
+        ]
     };
 
     try {
@@ -72,132 +86,117 @@ async function callGeminiOCR(base64Image) {
             body: JSON.stringify(payload)
         });
         
-        if (!response.ok) {
-            throw new Error(`HTTP Error: ${response.status}`);
-        }
+        if(!response.ok) throw new Error("Lỗi kết nối Gemini: " + response.status);
 
         const data = await response.json();
+        
+        // Kiểm tra block
+        if (data.promptFeedback && data.promptFeedback.blockReason) {
+            throw new Error("AI chặn nội dung: " + data.promptFeedback.blockReason);
+        }
+
         let textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!textResult) {
+            // Log chi tiết để debug
+            console.warn("AI Response:", data);
+            throw new Error("AI không phản hồi text (Kiểm tra Log Console)");
+        }
         
-        if (!textResult) throw new Error("AI không trả về kết quả text.");
-
-        // Clean JSON (xóa markdown nếu AI lỡ thêm vào)
         textResult = textResult.replace(/```json/g, '').replace(/```/g, '').trim();
-        
-        // Parse JSON
         return JSON.parse(textResult);
-
     } catch (e) {
         log(`Lỗi OCR: ${e.message}`, 'error');
-        alert(`Lỗi khi gọi Gemini: ${e.message}\nKiểm tra lại API Key hoặc kết nối mạng.`);
+        alert("Lỗi AI: " + e.message);
         return null;
     }
 }
 
-// --- SỰ KIỆN OCR ---
-document.getElementById('ocrInput').addEventListener('change', async function(e) {
-    const file = e.target.files[0];
-    if (!file) return;
+// --- EVENT LISTENERS ---
 
-    // UI Effect
-    const statusDiv = document.getElementById('ocrStatus');
-    const originalText = statusDiv.innerHTML;
-    statusDiv.innerHTML = `<span class="ocr-loading">🤖 AI đang đọc ảnh...</span>`;
-    log("Đang gửi ảnh lên Gemini...", 'info');
-
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = async function() {
-        const base64Str = reader.result.split(',')[1];
-        
-        const data = await callGeminiOCR(base64Str);
-        
-        if (data) {
-            log("OCR Thành công! Đang điền dữ liệu...", 'success');
-            
-            // Map dữ liệu vào input
-            const safeVal = (val) => val ? String(val).trim() : '';
-            
-            document.getElementById('inpMa').value = safeVal(data.MA_KH);
-            document.getElementById('inpTen').value = safeVal(data.TEN_KH);
-            document.getElementById('inpSDT').value = safeVal(data.SDT);
-            document.getElementById('inpDiaChi').value = safeVal(data.DIA_CHI);
-            document.getElementById('inpNoiDung').value = safeVal(data.NOI_DUNG);
-            
-            // Xử lý tiền đặc biệt để làm tròn
-            if (data.SO_TIEN) {
-                // Loại bỏ dấu chấm/phẩy nếu OCR đọc nhầm (VD: 500.000 -> 500000)
-                // Tuy nhiên cẩn thận với số thập phân, nhưng tiền VNĐ thường là số nguyên
-                const rawMoney = String(data.SO_TIEN).replace(/[^0-9]/g, '');
-                document.getElementById('inpTien').value = rawMoney;
-                // Trigger event để tính toán lại tiền bằng chữ
-                document.getElementById('inpTien').dispatchEvent(new Event('input'));
-            }
-        } else {
-            log("Không trích xuất được JSON từ ảnh.", 'error');
-        }
-        
-        statusDiv.innerHTML = originalText; // Reset nút
-        e.target.value = ''; // Reset file input để chọn lại ảnh khác nếu muốn
-    };
-});
-
-// --- CÁC HÀM CŨ (CORE) ---
-const patchBrokenTags = (xmlContent) => {
-    let patched = xmlContent.replace(/(<w:t>\{<\/w:t>)([\s\S]*?)(<w:t>\{<\/w:t>)/g, (m,s,mid,e) => `<w:t>{{</w:t>${mid}`);
-    patched = patched.replace(/(<w:t>\}<\/w:t>)([\s\S]*?)(<w:t>\}<\/w:t>)/g, (m,s,mid,e) => `${mid}<w:t>}}</w:t>`);
-    return patched;
-};
-
-document.getElementById('fileInput').addEventListener('change', function(e) {
+// 1. Upload File Mẫu
+els.fileInput.addEventListener('change', (e) => {
     const f = e.target.files[0];
     if (!f) return;
     const reader = new FileReader();
     reader.readAsArrayBuffer(f);
-    reader.onload = function(evt) {
+    reader.onload = (evt) => {
         fileBuffer = evt.target.result;
-        document.getElementById('fileStatus').innerText = `✅ Đã chọn: ${f.name}`;
-        document.getElementById('fileStatus').classList.add('text-green-600');
+        els.fileStatus.innerText = `✅ Đã chọn: ${f.name}`;
+        els.fileStatus.classList.add('text-green-600');
         log("Đọc file mẫu thành công!", 'success');
     };
 });
 
-window.switchTab = (tabName) => {
-    const tabForm = document.getElementById('tabForm');
-    const tabJson = document.getElementById('tabJson');
-    const btns = document.querySelectorAll('.tab-btn');
-    if (tabName === 'form') {
-        tabForm.classList.remove('hidden'); tabJson.classList.add('hidden');
-        btns[0].classList.add('active'); btns[1].classList.remove('active');
-    } else {
-        tabForm.classList.add('hidden'); tabJson.classList.remove('hidden');
-        btns[0].classList.remove('active'); btns[1].classList.add('active');
-    }
-};
+// 2. OCR Upload
+els.ocrInput.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
 
-document.getElementById('inpTien').addEventListener('input', function(e) {
-    const { fmt, text } = processMoney(e.target.value);
-    document.getElementById('moneyPreview').innerHTML = `Làm tròn: <b>${fmt}</b><br>${text}`;
+    const originalText = els.ocrStatus.innerHTML;
+    els.ocrStatus.innerHTML = `<span class="ocr-loading">🤖 Đang đọc ảnh...</span>`;
+    log("Đang gửi ảnh lên AI...", 'info');
+
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = async () => {
+        const base64Str = reader.result.split(',')[1];
+        const data = await callGeminiOCR(base64Str);
+        
+        if (data) {
+            log("AI đọc thành công! Đang điền form...", 'success');
+            document.getElementById('inpMa').value = data.MA_KH || '';
+            document.getElementById('inpTen').value = data.TEN_KH || '';
+            document.getElementById('inpSDT').value = data.SDT || '';
+            document.getElementById('inpDiaChi').value = data.DIA_CHI || '';
+            document.getElementById('inpNoiDung').value = data.NOI_DUNG || '';
+            
+            if (data.SO_TIEN) {
+                els.inpTien.value = data.SO_TIEN;
+                els.inpTien.dispatchEvent(new Event('input')); 
+            }
+        }
+        els.ocrStatus.innerHTML = originalText;
+        e.target.value = ''; 
+    };
 });
 
-document.getElementById('btnProcess').addEventListener('click', async function() {
-    if (!fileBuffer) { log("CHƯA CHỌN FILE MẪU!", 'error'); alert("Thiếu file mẫu!"); return; }
+// 3. Tab Switching
+els.btnTabForm.addEventListener('click', () => {
+    els.tabForm.classList.remove('hidden');
+    els.tabJson.classList.add('hidden');
+    els.btnTabForm.classList.add('active');
+    els.btnTabJson.classList.remove('active');
+});
+els.btnTabJson.addEventListener('click', () => {
+    els.tabForm.classList.add('hidden');
+    els.tabJson.classList.remove('hidden');
+    els.btnTabForm.classList.remove('active');
+    els.btnTabJson.classList.add('active');
+});
 
-    const btn = document.getElementById('btnProcess');
-    const previewDiv = document.getElementById('previewContainer');
-    const btnDown = document.getElementById('btnDownload');
-    
-    btn.disabled = true; btn.innerText = "⏳ Đang chạy...";
-    previewDiv.innerHTML = ""; btnDown.classList.add('hidden');
+// 4. Input Tiền
+els.inpTien.addEventListener('input', (e) => {
+    const { fmt, text } = processMoney(e.target.value);
+    els.moneyPreview.innerHTML = `Làm tròn: <b>${fmt}</b><br>${text}`;
+});
+
+// 5. Nút Thực Hiện
+els.btnProcess.addEventListener('click', async () => {
+    if (!fileBuffer) { alert("Chưa chọn file mẫu .docx!"); return; }
+
+    els.btnProcess.disabled = true;
+    els.btnProcess.innerText = "⏳ Đang xử lý...";
+    els.previewContainer.innerHTML = "";
+    els.btnDownload.classList.add('hidden');
 
     try {
         let dataList = [];
-        const isJsonTab = document.getElementById('tabJson').classList.contains('hidden') === false;
+        const isJsonTab = !els.tabJson.classList.contains('hidden');
 
         if (!isJsonTab) {
             const ma = document.getElementById('inpMa').value;
             const ten = document.getElementById('inpTen').value;
-            const tien = document.getElementById('inpTien').value;
+            const tien = els.inpTien.value;
             const sdt = document.getElementById('inpSDT').value;
             const diachi = document.getElementById('inpDiaChi').value;
             const noidung = document.getElementById('inpNoiDung').value;
@@ -210,64 +209,87 @@ document.getElementById('btnProcess').addEventListener('click', async function()
         } else {
             const jsonVal = document.getElementById('inpJson').value;
             if (!jsonVal.trim()) throw new Error("Ô JSON đang trống!");
-            try { dataList = JSON.parse(jsonVal); if (!Array.isArray(dataList)) dataList = [dataList]; } 
-            catch (e) { throw new Error("Lỗi cú pháp JSON."); }
+            dataList = JSON.parse(jsonVal);
+            if (!Array.isArray(dataList)) dataList = [dataList];
         }
 
         log(`Đã nhận ${dataList.length} bộ dữ liệu.`);
+        
         const zip = new JSZip();
         let firstDocBlob = null;
         let successCount = 0;
 
+        // AUTO PATCH XML (Sửa lỗi tag)
         const pzipMain = new PizZip(fileBuffer);
         const docXmlPath = "word/document.xml";
         if (pzipMain.files[docXmlPath]) {
             try {
-                const originalXml = pzipMain.file(docXmlPath).asText();
-                const fixedXml = patchBrokenTags(originalXml);
-                pzipMain.file(docXmlPath, fixedXml);
+                let xml = pzipMain.file(docXmlPath).asText();
+                xml = xml.replace(/(<w:t>\{<\/w:t>)([\s\S]*?)(<w:t>\{<\/w:t>)/g, (m,s,mid,e) => `<w:t>{{</w:t>${mid}`);
+                xml = xml.replace(/(<w:t>\}<\/w:t>)([\s\S]*?)(<w:t>\}<\/w:t>)/g, (m,s,mid,e) => `${mid}<w:t>}}</w:t>`);
+                pzipMain.file(docXmlPath, xml);
             } catch (e) {}
         }
         const fixedBuffer = pzipMain.generate({type: "arraybuffer"});
 
         dataList.forEach((item, index) => {
-            if (item.SO_TIEN && typeof item.SO_TIEN === 'number') {
+            if (item.SO_TIEN && typeof item.SO_TIEN !== 'undefined') {
                 const { fmt, text } = processMoney(item.SO_TIEN);
-                item.SO_TIEN_SO = fmt; item.SO_TIEN_CHU = item.SO_TIEN_CHU || text;
+                item.SO_TIEN_SO = fmt; 
+                item.SO_TIEN_CHU = item.SO_TIEN_CHU || text;
             }
+
             const pzip = new PizZip(fixedBuffer);
-            const doc = new window.docxtemplater(pzip, { paragraphLoop: true, linebreaks: true, nullGetter: () => "" });
+            const doc = new window.docxtemplater(pzip, { 
+                paragraphLoop: true, 
+                linebreaks: true, 
+                nullGetter: () => "" 
+            });
+            
             doc.render(item);
             const blob = doc.getZip().generate({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
             const fileName = `${item.MA_KH || 'Doc'}_${index+1}.docx`;
             zip.file(fileName, blob);
+            
             if (index === 0) firstDocBlob = blob;
             successCount++;
         });
 
         if (dataList.length === 1) {
-            generatedBlob = firstDocBlob; downloadName = `${dataList[0].MA_KH || 'KetQua'}.docx`;
+            generatedBlob = firstDocBlob;
+            downloadName = `${dataList[0].MA_KH || 'KetQua'}.docx`;
         } else {
-            generatedBlob = await zip.generateAsync({ type: "blob" }); downloadName = "Ket_Qua_Hang_Loat.zip";
+            generatedBlob = await zip.generateAsync({ type: "blob" });
+            downloadName = "Ket_Qua_Hang_Loat.zip";
         }
 
-        log(`Thành công!`, 'success');
-        if (window.docx && firstDocBlob) await window.docx.renderAsync(firstDocBlob, previewDiv);
-        btnDown.classList.remove('hidden');
+        log(`Thành công! Tạo ${successCount} file.`, 'success');
+        
+        if (window.docx && firstDocBlob) {
+            await window.docx.renderAsync(firstDocBlob, els.previewContainer);
+        }
+        els.btnDownload.classList.remove('hidden');
 
     } catch (err) {
         log(`LỖI: ${err.message}`, 'error');
-        alert(err.message);
+        alert("Có lỗi xảy ra: " + err.message);
     } finally {
-        btn.disabled = false; btn.innerText = "⚡ 3. THỰC HIỆN";
+        els.btnProcess.disabled = false;
+        els.btnProcess.innerText = "⚡ 3. THỰC HIỆN";
     }
 });
 
-document.getElementById('btnDownload').addEventListener('click', function() {
+// 6. Nút Tải Về
+els.btnDownload.addEventListener('click', () => {
     if (!generatedBlob) return;
     const url = window.URL.createObjectURL(generatedBlob);
     const a = document.createElement('a');
-    a.href = url; a.download = downloadName;
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
+    a.href = url;
+    a.download = downloadName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    }, 100);
 });
