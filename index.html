@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Docx Auto-Fill Pro (V6 - Auto API)</title>
+    <title>Docx Auto-Fill Pro (V7 - Stable)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Libs -->
+    <!-- Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/docxtemplater/3.29.0/docxtemplater.js"></script>
     <script src="https://unpkg.com/pizzip@3.1.1/dist/pizzip.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -32,7 +32,6 @@
     <div class="w-full md:w-[450px] bg-white border-r flex flex-col shadow-xl z-10 shrink-0 h-full">
         <div class="p-4 border-b bg-slate-50 space-y-2">
             <h1 class="text-lg font-bold text-blue-700">⚡ Auto-Fill + Gemini OCR</h1>
-            <!-- ĐÃ CẬP NHẬT API KEY VÀO ĐÂY -->
             <input type="password" id="inpApiKey" value="AIzaSyD2Fe6TC3gLa1lSE_C4wQ9BxEGNa2ptLww" class="w-full p-1.5 text-xs border border-blue-300 rounded focus:ring-1 focus:ring-blue-500 outline-none bg-blue-50 text-blue-800 font-mono">
         </div>
 
@@ -68,7 +67,7 @@
                     </div>
                     <div>
                         <label class="text-xs font-bold text-gray-500">Số Tiền</label>
-                        <input type="number" id="inpTien" placeholder="Nhập số..." class="w-full p-2 border rounded text-sm font-bold text-blue-600 bg-slate-50 focus:bg-white transition">
+                        <input type="text" id="inpTien" placeholder="Nhập số..." class="w-full p-2 border rounded text-sm font-bold text-blue-600 bg-slate-50 focus:bg-white transition">
                     </div>
                 </div>
                 <div>
@@ -103,7 +102,7 @@
 
             <!-- 6. Log -->
             <div id="logArea" class="bg-slate-900 text-white p-2 rounded shadow-inner">
-                <div class="text-slate-400">Hệ thống sẵn sàng...</div>
+                <div class="text-slate-400">Đang khởi tạo...</div>
             </div>
         </div>
     </div>
@@ -121,6 +120,247 @@
         </div>
     </div>
 
-    <script src="script.js"></script>
+    <!-- JAVASCRIPT LOGIC (ĐÃ GỘP) -->
+    <script>
+        // --- BIẾN TOÀN CỤC ---
+        let fileBuffer = null;
+        let generatedBlob = null;
+        let downloadName = "result.docx";
+
+        // --- TIỆN ÍCH LOG ---
+        const log = (msg, type = 'info') => {
+            const logArea = document.getElementById('logArea');
+            const color = type === 'error' ? 'text-red-400' : (type === 'success' ? 'text-green-400' : 'text-blue-300');
+            const time = new Date().toLocaleTimeString();
+            logArea.innerHTML += `<div class="${color} mb-1 border-b border-slate-700 pb-1">[${time}] ${msg}</div>`;
+            logArea.scrollTop = logArea.scrollHeight;
+            console.log(`[${type}] ${msg}`);
+        };
+
+        // --- KHỞI TẠO ---
+        document.addEventListener('DOMContentLoaded', () => {
+            log("Hệ thống đã sẵn sàng!", 'success');
+        });
+
+        // --- XỬ LÝ TIỀN (Làm tròn 54.321 -> 55.000) ---
+        const processMoney = (val) => {
+            if (!val) return { raw: 0, fmt: '', text: '' };
+            
+            // Xóa hết ký tự không phải số (để xử lý cả "54.321" hay "54,321")
+            const cleanVal = String(val).replace(/[^0-9]/g, '');
+            let num = parseFloat(cleanVal);
+            
+            if (isNaN(num)) return { raw: 0, fmt: val, text: '' };
+
+            // Làm tròn lên hàng nghìn
+            num = Math.ceil(num / 1000) * 1000;
+            const fmt = num.toLocaleString('vi-VN');
+            const text = `(Bằng chữ: ... đồng)`; 
+            return { raw: num, fmt, text };
+        };
+
+        // --- GỌI GEMINI OCR ---
+        async function callGeminiOCR(base64Image) {
+            const apiKey = document.getElementById('inpApiKey').value.trim();
+            if (!apiKey) {
+                alert("Vui lòng nhập API Key!");
+                return null;
+            }
+
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+            const prompt = `Trích xuất thông tin hóa đơn ra JSON. Các trường: MA_KH, TEN_KH, SO_TIEN (số nguyên), SDT, DIA_CHI, NOI_DUNG. Nếu không có để rỗng.`;
+
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: prompt },
+                        { inline_data: { mime_type: "image/jpeg", data: base64Image } }
+                    ]
+                }]
+            };
+
+            try {
+                const response = await fetch(url, {
+                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                let textResult = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (!textResult) throw new Error("AI không phản hồi text");
+                
+                textResult = textResult.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(textResult);
+            } catch (e) {
+                log(`Lỗi OCR: ${e.message}`, 'error');
+                return null;
+            }
+        }
+
+        // --- SỰ KIỆN OCR ---
+        document.getElementById('ocrInput').addEventListener('change', async function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const statusDiv = document.getElementById('ocrStatus');
+            const originalText = statusDiv.innerHTML;
+            statusDiv.innerHTML = `<span class="ocr-loading">🤖 Đang đọc ảnh...</span>`;
+            
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onload = async function() {
+                const base64Str = reader.result.split(',')[1];
+                const data = await callGeminiOCR(base64Str);
+                
+                if (data) {
+                    log("OCR Thành công!", 'success');
+                    document.getElementById('inpMa').value = data.MA_KH || '';
+                    document.getElementById('inpTen').value = data.TEN_KH || '';
+                    document.getElementById('inpSDT').value = data.SDT || '';
+                    document.getElementById('inpDiaChi').value = data.DIA_CHI || '';
+                    document.getElementById('inpNoiDung').value = data.NOI_DUNG || '';
+                    
+                    if (data.SO_TIEN) {
+                        document.getElementById('inpTien').value = data.SO_TIEN;
+                        document.getElementById('inpTien').dispatchEvent(new Event('input'));
+                    }
+                }
+                statusDiv.innerHTML = originalText;
+                e.target.value = '';
+            };
+        });
+
+        // --- SỰ KIỆN CHỌN FILE MẪU ---
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const f = e.target.files[0];
+            if (!f) return;
+            const reader = new FileReader();
+            reader.readAsArrayBuffer(f);
+            reader.onload = function(evt) {
+                fileBuffer = evt.target.result;
+                document.getElementById('fileStatus').innerText = `✅ Đã chọn: ${f.name}`;
+                document.getElementById('fileStatus').classList.add('text-green-600');
+                log("Đọc file mẫu thành công!", 'success');
+            };
+        });
+
+        // --- TAB SWITCH ---
+        window.switchTab = (tabName) => {
+            const tabForm = document.getElementById('tabForm');
+            const tabJson = document.getElementById('tabJson');
+            const btns = document.querySelectorAll('.tab-btn');
+            if (tabName === 'form') {
+                tabForm.classList.remove('hidden'); tabJson.classList.add('hidden');
+                btns[0].classList.add('active'); btns[1].classList.remove('active');
+            } else {
+                tabForm.classList.add('hidden'); tabJson.classList.remove('hidden');
+                btns[0].classList.remove('active'); btns[1].classList.add('active');
+            }
+        };
+
+        // --- INPUT TIỀN ---
+        document.getElementById('inpTien').addEventListener('input', function(e) {
+            const { fmt, text } = processMoney(e.target.value);
+            document.getElementById('moneyPreview').innerHTML = `Làm tròn: <b>${fmt}</b><br>${text}`;
+        });
+
+        // --- NÚT THỰC HIỆN ---
+        document.getElementById('btnProcess').addEventListener('click', async function() {
+            if (!fileBuffer) { alert("Thiếu file mẫu!"); return; }
+
+            const btn = document.getElementById('btnProcess');
+            const previewDiv = document.getElementById('previewContainer');
+            const btnDown = document.getElementById('btnDownload');
+            
+            btn.disabled = true; btn.innerText = "⏳ Đang chạy...";
+            previewDiv.innerHTML = ""; btnDown.classList.add('hidden');
+
+            try {
+                let dataList = [];
+                const isJsonTab = document.getElementById('tabJson').classList.contains('hidden') === false;
+
+                if (!isJsonTab) {
+                    const ma = document.getElementById('inpMa').value;
+                    const ten = document.getElementById('inpTen').value;
+                    const tien = document.getElementById('inpTien').value;
+                    const sdt = document.getElementById('inpSDT').value;
+                    const diachi = document.getElementById('inpDiaChi').value;
+                    const noidung = document.getElementById('inpNoiDung').value;
+                    const { fmt, text } = processMoney(tien);
+                    
+                    dataList = [{
+                        MA_KH: ma, TEN_KH: ten, SDT: sdt, DIA_CHI: diachi,
+                        SO_TIEN_SO: fmt, SO_TIEN_CHU: text, NOI_DUNG: noidung
+                    }];
+                } else {
+                    const jsonVal = document.getElementById('inpJson').value;
+                    if (!jsonVal.trim()) throw new Error("Ô JSON đang trống!");
+                    try { dataList = JSON.parse(jsonVal); if (!Array.isArray(dataList)) dataList = [dataList]; } 
+                    catch (e) { throw new Error("Lỗi cú pháp JSON."); }
+                }
+
+                log(`Đã nhận ${dataList.length} bộ dữ liệu.`);
+                const zip = new JSZip();
+                let firstDocBlob = null;
+                let successCount = 0;
+
+                // VÁ LỖI TAG WORD (AUTO PATCH)
+                const pzipMain = new PizZip(fileBuffer);
+                const docXmlPath = "word/document.xml";
+                if (pzipMain.files[docXmlPath]) {
+                    try {
+                        let xml = pzipMain.file(docXmlPath).asText();
+                        // Patch đơn giản cho các tag bị tách
+                        xml = xml.replace(/(<w:t>\{<\/w:t>)([\s\S]*?)(<w:t>\{<\/w:t>)/g, (m,s,mid,e) => `<w:t>{{</w:t>${mid}`);
+                        xml = xml.replace(/(<w:t>\}<\/w:t>)([\s\S]*?)(<w:t>\}<\/w:t>)/g, (m,s,mid,e) => `${mid}<w:t>}}</w:t>`);
+                        pzipMain.file(docXmlPath, xml);
+                    } catch (e) {}
+                }
+                const fixedBuffer = pzipMain.generate({type: "arraybuffer"});
+
+                dataList.forEach((item, index) => {
+                    if (item.SO_TIEN && typeof item.SO_TIEN !== 'undefined') {
+                        const { fmt, text } = processMoney(item.SO_TIEN);
+                        item.SO_TIEN_SO = fmt; item.SO_TIEN_CHU = item.SO_TIEN_CHU || text;
+                    }
+                    const pzip = new PizZip(fixedBuffer);
+                    const doc = new window.docxtemplater(pzip, { 
+                        paragraphLoop: true, 
+                        linebreaks: true, 
+                        nullGetter: () => "" // Không crash nếu thiếu tag
+                    });
+                    doc.render(item);
+                    const blob = doc.getZip().generate({ type: "blob", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+                    const fileName = `${item.MA_KH || 'Doc'}_${index+1}.docx`;
+                    zip.file(fileName, blob);
+                    if (index === 0) firstDocBlob = blob;
+                    successCount++;
+                });
+
+                if (dataList.length === 1) {
+                    generatedBlob = firstDocBlob; downloadName = `${dataList[0].MA_KH || 'KetQua'}.docx`;
+                } else {
+                    generatedBlob = await zip.generateAsync({ type: "blob" }); downloadName = "Ket_Qua_Hang_Loat.zip";
+                }
+
+                log(`Thành công!`, 'success');
+                if (window.docx && firstDocBlob) await window.docx.renderAsync(firstDocBlob, previewDiv);
+                btnDown.classList.remove('hidden');
+
+            } catch (err) {
+                log(`LỖI: ${err.message}`, 'error');
+                alert(err.message);
+            } finally {
+                btn.disabled = false; btn.innerText = "⚡ 3. THỰC HIỆN";
+            }
+        });
+
+        document.getElementById('btnDownload').addEventListener('click', function() {
+            if (!generatedBlob) return;
+            const url = window.URL.createObjectURL(generatedBlob);
+            const a = document.createElement('a');
+            a.href = url; a.download = downloadName;
+            document.body.appendChild(a); a.click();
+            setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
+        });
+    </script>
 </body>
 </html>
