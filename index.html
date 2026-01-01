@@ -3,231 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Translator Pro - Gemini Power</title>
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <title>Tra Cứu Sản Phẩm - Dữ liệu Google Drive</title>
     <style>
-        body { font-family: 'Plus Jakarta Sans', sans-serif; background: #fdfdfd; }
-        .glass-effect { background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.3); }
-        .loader { width: 20px; height: 20px; border: 2px solid #FFF; border-bottom-color: transparent; border-radius: 50%; display: inline-block; animation: rotation 1s linear infinite; }
-        @keyframes rotation { 0% { transform: rotate(0deg) } 100% { transform: rotate(360deg) } }
-        .word-card:hover { transform: translateY(-2px); transition: all 0.2s ease; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #f0f2f5; }
+        
+        /* Ô tìm kiếm */
+        #search-box { width: 100%; padding: 15px; font-size: 16px; border: 2px solid #007bff; border-radius: 8px; margin-bottom: 20px; box-sizing: border-box; outline: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        #search-box:disabled { background: #e9ecef; border-color: #ced4da; }
+
+        .loading { text-align: center; color: #666; font-style: italic; margin-top: 20px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+        
+        /* Card sản phẩm */
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); position: relative; transition: transform 0.2s; border: 1px solid #e1e4e8; }
+        .card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+        
+        .card h3 { margin: 0 0 15px 0; font-size: 16px; color: #1a1a1a; line-height: 1.4; padding-right: 50px; } /* Chừa chỗ cho QR */
+        
+        .specs { font-size: 13px; color: #555; line-height: 1.6; margin-bottom: 15px; background: #f8f9fa; padding: 10px; border-radius: 6px; }
+        
+        .price-tag { text-align: center; border-top: 1px dashed #dee2e6; padding-top: 15px; }
+        .price-old { text-decoration: line-through; color: #999; font-size: 14px; }
+        .price-main { font-size: 26px; font-weight: bold; color: #d32f2f; margin: 5px 0; }
+        .expiry { font-size: 12px; color: #28a745; font-weight: 500; }
+        
+        .qr-mock { position: absolute; top: 20px; right: 20px; width: 45px; height: 45px; border-radius: 4px; border: 1px solid #eee;}
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen">
-    <div id="root"></div>
+<body>
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+    <input type="text" id="search-box" placeholder="Đang tải dữ liệu từ Google Drive..." disabled>
+    
+    <div id="result-area" class="grid">
+        <div class="loading">Đang kết nối tới file dữ liệu...</div>
+    </div>
 
-        const App = () => {
-            const [inputText, setInputText] = useState('');
-            const [translatedText, setTranslatedText] = useState('');
-            const [dictionary, setDictionary] = useState([]);
-            const [isLoading, setIsLoading] = useState(false);
-            const [isSpeaking, setIsSpeaking] = useState(false);
-            const [targetLang, setTargetLang] = useState('Tiếng Việt');
+<script>
+    // --- CẤU HÌNH ---
+    // ID File của bạn: Dữ liệu gía
+    const SHEET_ID = '1HrBaQHwOKL5wcAphrVS5Kej5s2lKtvRajT__VMCP8WI'; 
+    const SHEET_GID = '0'; 
+
+    let products = [];
+    const searchBox = document.getElementById('search-box');
+    const resultArea = document.getElementById('result-area');
+
+    async function loadDataFromDrive() {
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq&gid=${SHEET_GID}`;
+        
+        try {
+            const response = await fetch(url);
+            const text = await response.text();
             
-            const apiKey = "AIzaSyD2Fe6TC3gLa1lSE_C4wQ9BxEGNa2ptLww";
-
-            // Helper: Convert PCM16 to WAV for playback
-            const createWavFile = (pcmData, sampleRate = 24000) => {
-                const buffer = new ArrayBuffer(44 + pcmData.length);
-                const view = new DataView(buffer);
-                const writeString = (offset, string) => {
-                    for (let i = 0; i < string.length; i++) view.setUint8(offset + i, string.charCodeAt(i));
-                };
-                writeString(0, 'RIFF');
-                view.setUint32(4, 36 + pcmData.length, true);
-                writeString(8, 'WAVE');
-                writeString(12, 'fmt ');
-                view.setUint32(16, 16, true);
-                view.setUint16(20, 1, true);
-                view.setUint16(22, 1, true);
-                view.setUint32(24, sampleRate, true);
-                view.setUint32(28, sampleRate * 2, true);
-                view.setUint16(32, 2, true);
-                view.setUint16(34, 16, true);
-                writeString(36, 'data');
-                view.setUint32(40, pcmData.length, true);
-                for (let i = 0; i < pcmData.length; i++) view.setUint8(44 + i, pcmData[i]);
-                return new Blob([buffer], { type: 'audio/wav' });
-            };
-
-            const handleTranslate = async () => {
-                if (!inputText.trim()) return;
-                setIsLoading(true);
+            // Xử lý dữ liệu trả về từ Google
+            const jsonString = text.substring(47).slice(0, -2);
+            const json = JSON.parse(jsonString);
+            
+            // Map dữ liệu (Cột A=0, B=1, C=2...)
+            products = json.table.rows.map(row => {
+                const c = row.c;
+                if (!c) return null; // Bỏ qua dòng trống
                 
-                try {
-                    // Call 1: Natural Translation
-                    const translateUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
-                    const translatePrompt = `Bạn là một chuyên gia ngôn ngữ. Hãy dịch đoạn văn bản sau sang ${targetLang} một cách tự nhiên, thoát ý nhất, không dịch máy móc word-by-word. Chỉ trả về kết quả dịch.\n\nVăn bản: "${inputText}"`;
-                    
-                    const transRes = await fetch(translateUrl, {
-                        method: 'POST',
-                        body: JSON.stringify({ contents: [{ parts: [{ text: translatePrompt }] }] })
-                    });
-                    const transData = await transRes.json();
-                    const resultText = transData.candidates[0].content.parts[0].text;
-                    setTranslatedText(resultText);
+                return {
+                    id: c[0]?.v || "",                    // Cột A: Mã SP
+                    name: c[1]?.v || "Chưa có tên",       // Cột B: Tên SP
+                    price_list: Number(c[2]?.v) || 0,     // Cột C: Giá niêm yết
+                    price_promo: Number(c[3]?.v) || 0,    // Cột D: Giá KM
+                    details: c[4]?.v ? String(c[4].v).split(',') : [], // Cột E: Thông số
+                    expiry: c[5]?.f || c[5]?.v || ""      // Cột F: Hạn dùng
+                };
+            }).filter(item => item !== null && item.id !== ""); // Lọc bỏ dòng lỗi
 
-                    // Call 2: Dictionary Analysis (JSON)
-                    const analyzePrompt = `Phân tích câu sau và liệt kê tối đa 4 từ vựng/cụm từ quan trọng kèm phiên âm, nghĩa tiếng Việt và 1 ví dụ ngắn. Trả về JSON theo mẫu: {"words": [{"word": "...", "ipa": "...", "meaning": "...", "example": "..."}]}. Văn bản: "${inputText}"`;
-                    
-                    const dictRes = await fetch(translateUrl, {
-                        method: 'POST',
-                        body: JSON.stringify({ 
-                            contents: [{ parts: [{ text: analyzePrompt }] }],
-                            generationConfig: { responseMimeType: "application/json" }
-                        })
-                    });
-                    const dictData = await dictRes.json();
-                    const dictJson = JSON.parse(dictData.candidates[0].content.parts[0].text);
-                    setDictionary(dictJson.words || []);
+            // Đã tải xong
+            searchBox.placeholder = "Gõ tên sản phẩm, mã số hoặc thông số để tìm...";
+            searchBox.disabled = false;
+            searchBox.focus();
+            render(products); 
 
-                } catch (error) {
-                    console.error("Lỗi:", error);
-                } finally {
-                    setIsLoading(false);
-                }
-            };
+        } catch (error) {
+            console.error(error);
+            resultArea.innerHTML = `<p style="color:red; text-align:center">
+                Lỗi tải dữ liệu!<br>
+                1. Hãy chắc chắn file Sheet đang ở chế độ "Anyone with the link" (Bất kỳ ai có liên kết).<br>
+                2. Kiểm tra lại kết nối mạng.
+            </p>`;
+        }
+    }
 
-            const speakText = async (text) => {
-                if (!text || isSpeaking) return;
-                setIsSpeaking(true);
-                try {
-                    const ttsUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
-                    const payload = {
-                        contents: [{ parts: [{ text: `Say naturally: ${text}` }] }],
-                        generationConfig: { 
-                            responseModalities: ["AUDIO"],
-                            speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Aoede" } } }
-                        }
-                    };
-                    const res = await fetch(ttsUrl, { method: 'POST', body: JSON.stringify(payload) });
-                    const data = await res.json();
-                    const base64Audio = data.candidates[0].content.parts[0].inlineData.data;
-                    const binaryString = atob(base64Audio);
-                    const bytes = new Uint8Array(binaryString.length);
-                    for (let i = 0; i < binaryString.length; i++) bytes[i] = binaryString.charCodeAt(i);
-                    
-                    const wavBlob = createWavFile(bytes);
-                    const audio = new Audio(URL.createObjectURL(wavBlob));
-                    audio.onended = () => setIsSpeaking(false);
-                    audio.play();
-                } catch (error) {
-                    console.error("TTS Error:", error);
-                    setIsSpeaking(false);
-                }
-            };
-
-            return (
-                <div className="max-w-4xl mx-auto p-4 md:p-8 space-y-8">
-                    <header className="text-center space-y-2">
-                        <h1 className="text-4xl font-extrabold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">AI Translator Pro</h1>
-                        <p className="text-slate-500 font-medium italic">Dịch thuật tự nhiên & Phân tích ngữ nghĩa chuyên sâu</p>
-                    </header>
-
-                    {/* Main Interface */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Source Side */}
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center px-2">
-                                <span className="text-sm font-bold text-slate-400 uppercase">Văn bản gốc</span>
-                                <button 
-                                    onClick={() => speakText(inputText)}
-                                    className={`p-2 rounded-full hover:bg-slate-100 transition-colors ${isSpeaking ? 'text-blue-500' : 'text-slate-400'}`}
-                                    title="Đọc văn bản gốc"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
-                                </button>
-                            </div>
-                            <textarea 
-                                value={inputText}
-                                onChange={(e) => setInputText(e.target.value)}
-                                className="w-full h-48 p-5 rounded-2xl border-0 shadow-sm glass-effect focus:ring-2 focus:ring-blue-500 outline-none resize-none text-lg leading-relaxed"
-                                placeholder="Nhập câu cần dịch..."
-                            />
-                        </div>
-
-                        {/* Translation Side */}
-                        <div className="space-y-4">
-                            <div className="flex justify-between items-center px-2">
-                                <select 
-                                    value={targetLang} 
-                                    onChange={(e) => setTargetLang(e.target.value)}
-                                    className="text-sm font-bold text-blue-600 bg-transparent border-none outline-none cursor-pointer"
-                                >
-                                    <option>Tiếng Việt</option>
-                                    <option>English</option>
-                                    <option>日本語</option>
-                                    <option>Français</option>
-                                </select>
-                                <button 
-                                    onClick={() => speakText(translatedText)}
-                                    className="p-2 rounded-full hover:bg-slate-100 transition-colors text-slate-400"
-                                    title="Đọc văn bản dịch"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
-                                </button>
-                            </div>
-                            <div className="w-full h-48 p-5 rounded-2xl bg-blue-600 text-white shadow-xl text-lg leading-relaxed overflow-y-auto relative">
-                                {isLoading ? (
-                                    <div className="absolute inset-0 flex items-center justify-center bg-blue-600 bg-opacity-90 rounded-2xl">
-                                        <div className="loader"></div>
-                                    </div>
-                                ) : (
-                                    translatedText || <span className="opacity-50 italic">Kết quả sẽ hiển thị tại đây...</span>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex justify-center">
-                        <button 
-                            onClick={handleTranslate}
-                            disabled={isLoading || !inputText}
-                            className="px-10 py-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-2xl shadow-lg shadow-indigo-200 transition-all active:scale-95"
-                        >
-                            DỊCH NGAY
-                        </button>
-                    </div>
-
-                    {/* Dictionary Section */}
-                    {dictionary.length > 0 && (
-                        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <h3 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-                                Phân tích từ điển
-                            </h3>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {dictionary.map((item, idx) => (
-                                    <div key={idx} className="p-5 rounded-2xl glass-effect shadow-sm word-card cursor-pointer border-l-4 border-indigo-500">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <h4 className="text-lg font-bold text-slate-900">{item.word}</h4>
-                                                <span className="text-xs text-slate-400 font-mono italic">{item.ipa}</span>
-                                            </div>
-                                            <button onClick={() => speakText(item.word)} className="text-slate-300 hover:text-indigo-500"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path></svg></button>
-                                        </div>
-                                        <p className="mt-2 text-indigo-600 font-semibold">{item.meaning}</p>
-                                        <div className="mt-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
-                                            <p className="text-xs text-slate-500 italic leading-relaxed">"{item.example}"</p>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
+    function render(data) {
+        if(data.length === 0) {
+            resultArea.innerHTML = '<p class="loading">Không tìm thấy sản phẩm nào.</p>';
+            return;
+        }
+        
+        resultArea.innerHTML = data.map(item => `
+            <div class="card">
+                <h3>${item.name}</h3>
+                <img class="qr-mock" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${item.id}" alt="QR">
+                
+                <div class="specs">
+                    <b>Mã SP:</b> ${item.id}<br>
+                    <hr style="border:0; border-top:1px solid #eee; margin:5px 0">
+                    ${item.details.map(d => `• ${d.trim()}`).join('<br>')}
                 </div>
-            );
-        };
+                
+                <div class="price-tag">
+                    <div class="price-old">${item.price_list.toLocaleString('vi-VN')}đ</div>
+                    <div class="price-main">${item.price_promo.toLocaleString('vi-VN')}đ</div>
+                    <div class="expiry">Áp dụng tới: ${item.expiry}</div>
+                </div>
+            </div>
+        `).join('');
+    }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
+    // Tìm kiếm thông minh (không dấu, chữ hoa thường)
+    searchBox.addEventListener('input', (e) => {
+        const keyword = e.target.value.toLowerCase().trim();
+        
+        // Hàm chuyển tiếng Việt có dấu -> không dấu để tìm kiếm dễ hơn
+        const removeAccents = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        
+        const keywordNoAccents = removeAccents(keyword);
+
+        const filtered = products.filter(p => {
+            const nameSearch = removeAccents(p.name.toLowerCase());
+            const idSearch = p.id.toLowerCase();
+            const detailSearch = removeAccents(p.details.join(' ').toLowerCase());
+            
+            return nameSearch.includes(keywordNoAccents) || 
+                   idSearch.includes(keyword) || 
+                   detailSearch.includes(keywordNoAccents);
+        });
+        
+        render(filtered);
+    });
+
+    loadDataFromDrive();
+
+</script>
 </body>
 </html>
