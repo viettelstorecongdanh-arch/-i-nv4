@@ -2,143 +2,364 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tra Cứu Sản Phẩm - Dữ liệu Google Drive</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Hệ Thống Kho & Giá</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; background: #f0f2f5; }
-        
-        /* Ô tìm kiếm */
-        #search-box { width: 100%; padding: 15px; font-size: 16px; border: 2px solid #007bff; border-radius: 8px; margin-bottom: 20px; box-sizing: border-box; outline: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        #search-box:disabled { background: #e9ecef; border-color: #ced4da; }
+        :root {
+            --primary: #007AFF; /* Màu xanh Apple */
+            --bg-color: #F5F7FA;
+            --card-bg: #FFFFFF;
+            --text-main: #1D1D1F;
+            --text-sub: #86868B;
+            --success: #34C759;
+            --danger: #FF3B30;
+            --warning: #FF9500;
+        }
 
-        .loading { text-align: center; color: #666; font-style: italic; margin-top: 20px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0; padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* --- HEADER (Kính mờ) --- */
+        .header {
+            position: fixed; top: 0; left: 0; right: 0;
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: 15px 20px;
+            box-shadow: 0 1px 0 rgba(0,0,0,0.05);
+            z-index: 100;
+            display: flex; flex-direction: column; gap: 10px;
+        }
+
+        .search-wrapper {
+            position: relative;
+            max-width: 800px; margin: 0 auto; width: 100%;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 45px 12px 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(0,0,0,0.1);
+            background: rgba(0,0,0,0.03);
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s;
+            box-sizing: border-box;
+        }
+        .search-input:focus { background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: var(--primary); }
+        .search-icon { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #999; }
+
+        .status-bar { text-align: center; font-size: 12px; color: var(--text-sub); margin-top: 5px; }
+
+        /* --- GRID SẢN PHẨM --- */
+        .container {
+            max-width: 1200px; margin: 0 auto;
+            padding: 100px 20px 40px 20px; /* Padding top để tránh Header che */
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.02), 0 1px 3px rgba(0,0,0,0.05);
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+            position: relative;
+            border: 1px solid rgba(0,0,0,0.05);
+            display: flex; flex-direction: column;
+        }
+
+        .card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.08); }
+
+        .stock-badge {
+            position: absolute; top: 15px; right: 15px;
+            font-size: 11px; font-weight: 700;
+            padding: 4px 10px; border-radius: 20px;
+            text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .stock-in { background: #E8F5E9; color: var(--success); }
+        .stock-out { background: #FFEBEE; color: var(--danger); }
+
+        .card-name { font-size: 17px; font-weight: 600; margin: 0 0 5px 0; line-height: 1.4; padding-right: 60px; }
+        .card-code { font-size: 13px; color: var(--text-sub); font-family: monospace; margin-bottom: 15px; }
         
-        /* Card sản phẩm */
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); position: relative; transition: transform 0.2s; border: 1px solid #e1e4e8; }
-        .card:hover { transform: translateY(-3px); box-shadow: 0 10px 15px rgba(0,0,0,0.1); }
+        .card-price-group { margin-top: auto; }
+        .price-main { font-size: 20px; font-weight: 700; color: var(--text-main); letter-spacing: -0.5px; }
+        .price-sub { font-size: 13px; color: var(--text-sub); margin-top: 2px; }
+
+        /* --- MODAL (POPUP) --- */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(5px);
+            z-index: 1000;
+            display: none; justify-content: center; align-items: center;
+            opacity: 0; transition: opacity 0.2s;
+        }
+        .modal-overlay.active { display: flex; opacity: 1; }
+
+        .modal {
+            background: #fff; width: 500px; max-width: 90%;
+            border-radius: 24px; padding: 30px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            transform: scale(0.9); transition: transform 0.2s;
+            max-height: 85vh; display: flex; flex-direction: column;
+        }
+        .modal-overlay.active .modal { transform: scale(1); }
+
+        .modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+        .modal-title { font-size: 20px; font-weight: 700; line-height: 1.3; }
+        .btn-close { background: #f0f0f0; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; color: #666; display: flex; align-items: center; justify-content: center; }
+        .btn-close:hover { background: #e0e0e0; }
+
+        .modal-body { overflow-y: auto; flex: 1; padding-right: 5px; }
         
-        .card h3 { margin: 0 0 15px 0; font-size: 16px; color: #1a1a1a; line-height: 1.4; padding-right: 50px; } /* Chừa chỗ cho QR */
-        
-        .specs { font-size: 13px; color: #555; line-height: 1.6; margin-bottom: 15px; background: #f8f9fa; padding: 10px; border-radius: 6px; }
-        
-        .price-tag { text-align: center; border-top: 1px dashed #dee2e6; padding-top: 15px; }
-        .price-old { text-decoration: line-through; color: #999; font-size: 14px; }
-        .price-main { font-size: 26px; font-weight: bold; color: #d32f2f; margin: 5px 0; }
-        .expiry { font-size: 12px; color: #28a745; font-weight: 500; }
-        
-        .qr-mock { position: absolute; top: 20px; right: 20px; width: 45px; height: 45px; border-radius: 4px; border: 1px solid #eee;}
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #f0f0f0; padding-bottom: 8px; }
+        .info-label { color: var(--text-sub); }
+        .info-val { font-weight: 600; }
+
+        .imei-box {
+            background: #F9FAFB; border: 1px dashed #D1D5DB;
+            border-radius: 12px; padding: 15px; margin-top: 15px;
+        }
+        .imei-title { font-size: 12px; font-weight: 700; color: var(--text-sub); margin-bottom: 10px; text-transform: uppercase; }
+        .imei-item {
+            font-family: 'SF Mono', 'Consolas', monospace; font-size: 13px;
+            padding: 8px; background: #fff; border-radius: 6px; margin-bottom: 6px;
+            display: flex; justify-content: space-between; align-items: center;
+            border: 1px solid #eee;
+        }
+        .copy-btn { font-size: 11px; color: var(--primary); cursor: pointer; background: none; border: none; font-weight: 600;}
+        .copy-btn:hover { text-decoration: underline; }
+
+        /* Loader */
+        .loader { border: 3px solid #f3f3f3; border-top: 3px solid var(--primary); border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; margin: 0 auto; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
     </style>
 </head>
 <body>
 
-    <input type="text" id="search-box" placeholder="Đang tải dữ liệu từ Google Drive..." disabled>
-    
-    <div id="result-area" class="grid">
-        <div class="loading">Đang kết nối tới file dữ liệu...</div>
+    <div class="header">
+        <div class="search-wrapper">
+            <input type="text" class="search-input" id="search-box" placeholder="Tìm tên máy, mã số, hoặc IMEI..." disabled>
+            <i class="fas fa-search search-icon"></i>
+        </div>
+        <div class="status-bar" id="status-bar">
+            <div class="loader"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div id="grid-result" class="grid"></div>
+    </div>
+
+    <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title" id="m-name">Tên sản phẩm</div>
+                <button class="btn-close" onclick="closeModalBtn()">×</button>
+            </div>
+            
+            <div class="modal-body">
+                <div class="info-row">
+                    <span class="info-label">Mã SP</span>
+                    <span class="info-val" id="m-code">---</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Giá niêm yết</span>
+                    <span class="info-val" id="m-price-list">0đ</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Giá bán</span>
+                    <span class="info-val" style="color:var(--danger); font-size:16px;" id="m-price-final">0đ</span>
+                </div>
+
+                <div class="imei-box" id="m-imei-box">
+                    <div class="imei-title">Danh sách IMEI (<span id="m-stock">0</span>)</div>
+                    <div id="m-imei-list"></div>
+                </div>
+            </div>
+        </div>
     </div>
 
 <script>
-    // --- CẤU HÌNH ---
-    // ID File của bạn: Dữ liệu gía
-    const SHEET_ID = '1HrBaQHwOKL5wcAphrVS5Kej5s2lKtvRajT__VMCP8WI'; 
-    const SHEET_GID = '0'; 
+    // --- CẤU HÌNH NGUỒN DỮ LIỆU ---
+    // Thay ID Sheet của bạn vào đây
+    const DATA_SOURCES = [
+        { name: "Tổng Kho", id: '1HrBaQHwOKL5wcAphrVS5Kej5s2lKtvRajT__VMCP8WI', gid: '0' }
+    ];
 
-    let products = [];
+    let allProducts = [];
     const searchBox = document.getElementById('search-box');
-    const resultArea = document.getElementById('result-area');
+    const resultArea = document.getElementById('grid-result');
+    const statusBar = document.getElementById('status-bar');
+    const modal = document.getElementById('modal-overlay');
 
-    async function loadDataFromDrive() {
-        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq&gid=${SHEET_GID}`;
-        
+    // 1. HÀM LOAD & GỘP DỮ LIỆU (Core Logic)
+    async function initSystem() {
         try {
-            const response = await fetch(url);
-            const text = await response.text();
-            
-            // Xử lý dữ liệu trả về từ Google
-            const jsonString = text.substring(47).slice(0, -2);
-            const json = JSON.parse(jsonString);
-            
-            // Map dữ liệu (Cột A=0, B=1, C=2...)
-            products = json.table.rows.map(row => {
-                const c = row.c;
-                if (!c) return null; // Bỏ qua dòng trống
-                
-                return {
-                    id: c[0]?.v || "",                    // Cột A: Mã SP
-                    name: c[1]?.v || "Chưa có tên",       // Cột B: Tên SP
-                    price_list: Number(c[2]?.v) || 0,     // Cột C: Giá niêm yết
-                    price_promo: Number(c[3]?.v) || 0,    // Cột D: Giá KM
-                    details: c[4]?.v ? String(c[4].v).split(',') : [], // Cột E: Thông số
-                    expiry: c[5]?.f || c[5]?.v || ""      // Cột F: Hạn dùng
-                };
-            }).filter(item => item !== null && item.id !== ""); // Lọc bỏ dòng lỗi
+            const promises = DATA_SOURCES.map(src => 
+                fetch(`https://docs.google.com/spreadsheets/d/${src.id}/gviz/tq?tqx=out:json&tq&gid=${src.gid}`)
+                .then(r => r.text())
+                .then(t => JSON.parse(t.substring(47).slice(0, -2)).table.rows)
+            );
 
-            // Đã tải xong
-            searchBox.placeholder = "Gõ tên sản phẩm, mã số hoặc thông số để tìm...";
+            const sheetsData = await Promise.all(promises);
+            const productMap = new Map();
+
+            sheetsData.flat().forEach(row => {
+                const c = row.c;
+                if (!c) return;
+
+                // MAP CỘT: A(0)=Mã, B(1)=Tên, C(2)=IMEI, F(5)=Giá
+                // Điều chỉnh chỉ số [x] nếu file Excel của bạn khác
+                const id = c[0]?.v || "NO_ID";
+                const name = c[1]?.v || "Chưa đặt tên";
+                const imei = c[2]?.v ? String(c[2].v).trim() : null;
+                const price_raw = c[5]?.v || 0; // Giá từ file
+                
+                // Key để gộp: Dùng Mã + Tên để tránh trùng lặp
+                const key = id + "_" + name;
+
+                if (!productMap.has(key)) {
+                    productMap.set(key, {
+                        id: id,
+                        name: name,
+                        price: price_raw,
+                        imeis: [],
+                        source_count: 0
+                    });
+                }
+                
+                const p = productMap.get(key);
+                if (imei) p.imeis.push(imei);
+                p.source_count++;
+            });
+
+            allProducts = Array.from(productMap.values());
+            
+            // UI Update
+            statusBar.innerHTML = `<i class="fas fa-check-circle" style="color:green"></i> Đã tải ${allProducts.length} dòng sản phẩm.`;
             searchBox.disabled = false;
             searchBox.focus();
-            render(products); 
+            render(allProducts);
 
-        } catch (error) {
-            console.error(error);
-            resultArea.innerHTML = `<p style="color:red; text-align:center">
-                Lỗi tải dữ liệu!<br>
-                1. Hãy chắc chắn file Sheet đang ở chế độ "Anyone with the link" (Bất kỳ ai có liên kết).<br>
-                2. Kiểm tra lại kết nối mạng.
-            </p>`;
+        } catch (e) {
+            console.error(e);
+            statusBar.innerHTML = `<span style="color:red">Lỗi kết nối! Vui lòng kiểm tra mạng hoặc quyền truy cập Sheet.</span>`;
         }
     }
 
+    // 2. HÀM RENDER (Tối ưu UI)
     function render(data) {
         if(data.length === 0) {
-            resultArea.innerHTML = '<p class="loading">Không tìm thấy sản phẩm nào.</p>';
+            resultArea.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:#999">Không tìm thấy sản phẩm nào.</div>`;
             return;
         }
-        
-        resultArea.innerHTML = data.map(item => `
-            <div class="card">
-                <h3>${item.name}</h3>
-                <img class="qr-mock" src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${item.id}" alt="QR">
+
+        resultArea.innerHTML = data.map(p => {
+            const stock = p.imeis.length;
+            const isStock = stock > 0;
+            
+            // Badge tồn kho
+            const badgeClass = isStock ? 'stock-in' : 'stock-out';
+            const badgeText = isStock ? `Sẵn hàng: ${stock}` : 'Hết hàng';
+            
+            // Xử lý giá: Nếu giá = 0 thì ẩn hoặc hiện "Liên hệ"
+            const displayPrice = p.price > 0 ? p.price.toLocaleString() + 'đ' : 'Liên hệ';
+
+            // Stringify object để truyền vào hàm onclick (Escape kỹ tự đặc biệt)
+            const dataStr = encodeURIComponent(JSON.stringify(p));
+
+            return `
+            <div class="card" onclick="openModal('${dataStr}')">
+                <div class="stock-badge ${badgeClass}">${badgeText}</div>
+                <div class="card-name">${p.name}</div>
+                <div class="card-code">#${p.id}</div>
                 
-                <div class="specs">
-                    <b>Mã SP:</b> ${item.id}<br>
-                    <hr style="border:0; border-top:1px solid #eee; margin:5px 0">
-                    ${item.details.map(d => `• ${d.trim()}`).join('<br>')}
-                </div>
-                
-                <div class="price-tag">
-                    <div class="price-old">${item.price_list.toLocaleString('vi-VN')}đ</div>
-                    <div class="price-main">${item.price_promo.toLocaleString('vi-VN')}đ</div>
-                    <div class="expiry">Áp dụng tới: ${item.expiry}</div>
+                <div class="card-price-group">
+                    <div class="price-sub">Giá bán lẻ</div>
+                    <div class="price-main">${displayPrice}</div>
                 </div>
             </div>
-        `).join('');
+            `;
+        }).join('');
     }
 
-    // Tìm kiếm thông minh (không dấu, chữ hoa thường)
+    // 3. TÌM KIẾM (Search Logic)
     searchBox.addEventListener('input', (e) => {
-        const keyword = e.target.value.toLowerCase().trim();
-        
-        // Hàm chuyển tiếng Việt có dấu -> không dấu để tìm kiếm dễ hơn
-        const removeAccents = (str) => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        
-        const keywordNoAccents = removeAccents(keyword);
+        const term = e.target.value.toLowerCase().trim();
+        const removeTone = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const termNoTone = removeTone(term);
 
-        const filtered = products.filter(p => {
-            const nameSearch = removeAccents(p.name.toLowerCase());
-            const idSearch = p.id.toLowerCase();
-            const detailSearch = removeAccents(p.details.join(' ').toLowerCase());
+        const filtered = allProducts.filter(p => {
+            const nameCheck = removeTone(p.name.toLowerCase()).includes(termNoTone);
+            const idCheck = String(p.id).toLowerCase().includes(term);
+            const imeiCheck = p.imeis.some(i => i.toLowerCase().includes(term));
             
-            return nameSearch.includes(keywordNoAccents) || 
-                   idSearch.includes(keyword) || 
-                   detailSearch.includes(keywordNoAccents);
+            return nameCheck || idCheck || imeiCheck;
         });
         
         render(filtered);
     });
 
-    loadDataFromDrive();
+    // 4. MODAL LOGIC (Chi tiết & Copy)
+    window.openModal = (dataStr) => {
+        const p = JSON.parse(decodeURIComponent(dataStr));
+        
+        document.getElementById('m-name').innerText = p.name;
+        document.getElementById('m-code').innerText = p.id;
+        document.getElementById('m-price-final').innerText = p.price > 0 ? p.price.toLocaleString() + 'đ' : 'Liên hệ';
+        document.getElementById('m-stock').innerText = p.imeis.length;
+
+        // Render List IMEI
+        const imeiContainer = document.getElementById('m-imei-list');
+        if (p.imeis.length > 0) {
+            document.getElementById('m-imei-box').style.display = 'block';
+            imeiContainer.innerHTML = p.imeis.map(imei => `
+                <div class="imei-item">
+                    <span>${imei}</span>
+                    <button class="copy-btn" onclick="copyToClip('${imei}')">COPY</button>
+                </div>
+            `).join('');
+        } else {
+            document.getElementById('m-imei-box').style.display = 'none';
+        }
+
+        modal.classList.add('active');
+    }
+
+    window.closeModalBtn = () => {
+        modal.classList.remove('active');
+    }
+
+    window.closeModal = (e) => {
+        if (e.target === modal) modal.classList.remove('active');
+    }
+
+    window.copyToClip = (text) => {
+        navigator.clipboard.writeText(text).then(() => {
+            // Hiệu ứng visual báo đã copy (Optional)
+            alert("Đã copy IMEI: " + text); 
+        });
+    }
+
+    // Chạy ứng dụng
+    initSystem();
 
 </script>
 </body>
