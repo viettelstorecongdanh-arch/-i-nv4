@@ -1,215 +1,19 @@
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hệ Thống Kho & Giá</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #007AFF; /* Màu xanh Apple */
-            --bg-color: #F5F7FA;
-            --card-bg: #FFFFFF;
-            --text-main: #1D1D1F;
-            --text-sub: #86868B;
-            --success: #34C759;
-            --danger: #FF3B30;
-            --warning: #FF9500;
-        }
+// --- CẤU HÌNH CỘT (QUAN TRỌNG) ---
+    // Hãy sửa số này tương ứng với cột trong Sheet của bạn (A=0, B=1, C=2...)
+    const COL_ID    = 0; // Cột Mã SP
+    const COL_NAME  = 1; // Cột Tên SP
+    const COL_IMEI  = 2; // Cột IMEI
+    const COL_PRICE = 5; // Cột Giá Bán <--- HÃY KIỂM TRA LẠI SỐ NÀY
 
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
-            margin: 0; padding: 0;
-            -webkit-font-smoothing: antialiased;
-        }
+    // Hàm hỗ trợ chuyển đổi giá tiền từ mọi định dạng (chữ, số, có dấu chấm phẩy...)
+    function parsePrice(value) {
+        if (!value) return 0;
+        if (typeof value === 'number') return value;
+        // Nếu là chữ (VD: "4.500.000 đ"), xóa hết ký tự lạ chỉ giữ lại số
+        const numberString = String(value).replace(/[^0-9]/g, ""); 
+        return parseInt(numberString) || 0;
+    }
 
-        /* --- HEADER (Kính mờ) --- */
-        .header {
-            position: fixed; top: 0; left: 0; right: 0;
-            background: rgba(255, 255, 255, 0.85);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            padding: 15px 20px;
-            box-shadow: 0 1px 0 rgba(0,0,0,0.05);
-            z-index: 100;
-            display: flex; flex-direction: column; gap: 10px;
-        }
-
-        .search-wrapper {
-            position: relative;
-            max-width: 800px; margin: 0 auto; width: 100%;
-        }
-
-        .search-input {
-            width: 100%;
-            padding: 12px 45px 12px 20px;
-            border-radius: 12px;
-            border: 1px solid rgba(0,0,0,0.1);
-            background: rgba(0,0,0,0.03);
-            font-size: 16px;
-            outline: none;
-            transition: all 0.3s;
-            box-sizing: border-box;
-        }
-        .search-input:focus { background: #fff; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border-color: var(--primary); }
-        .search-icon { position: absolute; right: 15px; top: 50%; transform: translateY(-50%); color: #999; }
-
-        .status-bar { text-align: center; font-size: 12px; color: var(--text-sub); margin-top: 5px; }
-
-        /* --- GRID SẢN PHẨM --- */
-        .container {
-            max-width: 1200px; margin: 0 auto;
-            padding: 100px 20px 40px 20px; /* Padding top để tránh Header che */
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-            gap: 20px;
-        }
-
-        .card {
-            background: var(--card-bg);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.02), 0 1px 3px rgba(0,0,0,0.05);
-            transition: transform 0.2s, box-shadow 0.2s;
-            cursor: pointer;
-            position: relative;
-            border: 1px solid rgba(0,0,0,0.05);
-            display: flex; flex-direction: column;
-        }
-
-        .card:hover { transform: translateY(-4px); box-shadow: 0 12px 24px rgba(0,0,0,0.08); }
-
-        .stock-badge {
-            position: absolute; top: 15px; right: 15px;
-            font-size: 11px; font-weight: 700;
-            padding: 4px 10px; border-radius: 20px;
-            text-transform: uppercase; letter-spacing: 0.5px;
-        }
-        .stock-in { background: #E8F5E9; color: var(--success); }
-        .stock-out { background: #FFEBEE; color: var(--danger); }
-
-        .card-name { font-size: 17px; font-weight: 600; margin: 0 0 5px 0; line-height: 1.4; padding-right: 60px; }
-        .card-code { font-size: 13px; color: var(--text-sub); font-family: monospace; margin-bottom: 15px; }
-        
-        .card-price-group { margin-top: auto; }
-        .price-main { font-size: 20px; font-weight: 700; color: var(--text-main); letter-spacing: -0.5px; }
-        .price-sub { font-size: 13px; color: var(--text-sub); margin-top: 2px; }
-
-        /* --- MODAL (POPUP) --- */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(5px);
-            z-index: 1000;
-            display: none; justify-content: center; align-items: center;
-            opacity: 0; transition: opacity 0.2s;
-        }
-        .modal-overlay.active { display: flex; opacity: 1; }
-
-        .modal {
-            background: #fff; width: 500px; max-width: 90%;
-            border-radius: 24px; padding: 30px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-            transform: scale(0.9); transition: transform 0.2s;
-            max-height: 85vh; display: flex; flex-direction: column;
-        }
-        .modal-overlay.active .modal { transform: scale(1); }
-
-        .modal-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-        .modal-title { font-size: 20px; font-weight: 700; line-height: 1.3; }
-        .btn-close { background: #f0f0f0; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; color: #666; display: flex; align-items: center; justify-content: center; }
-        .btn-close:hover { background: #e0e0e0; }
-
-        .modal-body { overflow-y: auto; flex: 1; padding-right: 5px; }
-        
-        .info-row { display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #f0f0f0; padding-bottom: 8px; }
-        .info-label { color: var(--text-sub); }
-        .info-val { font-weight: 600; }
-
-        .imei-box {
-            background: #F9FAFB; border: 1px dashed #D1D5DB;
-            border-radius: 12px; padding: 15px; margin-top: 15px;
-        }
-        .imei-title { font-size: 12px; font-weight: 700; color: var(--text-sub); margin-bottom: 10px; text-transform: uppercase; }
-        .imei-item {
-            font-family: 'SF Mono', 'Consolas', monospace; font-size: 13px;
-            padding: 8px; background: #fff; border-radius: 6px; margin-bottom: 6px;
-            display: flex; justify-content: space-between; align-items: center;
-            border: 1px solid #eee;
-        }
-        .copy-btn { font-size: 11px; color: var(--primary); cursor: pointer; background: none; border: none; font-weight: 600;}
-        .copy-btn:hover { text-decoration: underline; }
-
-        /* Loader */
-        .loader { border: 3px solid #f3f3f3; border-top: 3px solid var(--primary); border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; margin: 0 auto; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-    </style>
-</head>
-<body>
-
-    <div class="header">
-        <div class="search-wrapper">
-            <input type="text" class="search-input" id="search-box" placeholder="Tìm tên máy, mã số, hoặc IMEI..." disabled>
-            <i class="fas fa-search search-icon"></i>
-        </div>
-        <div class="status-bar" id="status-bar">
-            <div class="loader"></div>
-        </div>
-    </div>
-
-    <div class="container">
-        <div id="grid-result" class="grid"></div>
-    </div>
-
-    <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
-        <div class="modal">
-            <div class="modal-header">
-                <div class="modal-title" id="m-name">Tên sản phẩm</div>
-                <button class="btn-close" onclick="closeModalBtn()">×</button>
-            </div>
-            
-            <div class="modal-body">
-                <div class="info-row">
-                    <span class="info-label">Mã SP</span>
-                    <span class="info-val" id="m-code">---</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Giá niêm yết</span>
-                    <span class="info-val" id="m-price-list">0đ</span>
-                </div>
-                <div class="info-row">
-                    <span class="info-label">Giá bán</span>
-                    <span class="info-val" style="color:var(--danger); font-size:16px;" id="m-price-final">0đ</span>
-                </div>
-
-                <div class="imei-box" id="m-imei-box">
-                    <div class="imei-title">Danh sách IMEI (<span id="m-stock">0</span>)</div>
-                    <div id="m-imei-list"></div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-<script>
-    // --- CẤU HÌNH NGUỒN DỮ LIỆU ---
-    // Thay ID Sheet của bạn vào đây
-    const DATA_SOURCES = [
-        { name: "Tổng Kho", id: '1HrBaQHwOKL5wcAphrVS5Kej5s2lKtvRajT__VMCP8WI', gid: '0' }
-    ];
-
-    let allProducts = [];
-    const searchBox = document.getElementById('search-box');
-    const resultArea = document.getElementById('grid-result');
-    const statusBar = document.getElementById('status-bar');
-    const modal = document.getElementById('modal-overlay');
-
-    // 1. HÀM LOAD & GỘP DỮ LIỆU (Core Logic)
     async function initSystem() {
         try {
             const promises = DATA_SOURCES.map(src => 
@@ -225,21 +29,21 @@
                 const c = row.c;
                 if (!c) return;
 
-                // MAP CỘT: A(0)=Mã, B(1)=Tên, C(2)=IMEI, F(5)=Giá
-                // Điều chỉnh chỉ số [x] nếu file Excel của bạn khác
-                const id = c[0]?.v || "NO_ID";
-                const name = c[1]?.v || "Chưa đặt tên";
-                const imei = c[2]?.v ? String(c[2].v).trim() : null;
-                const price_raw = c[5]?.v || 0; // Giá từ file
+                const id = c[COL_ID]?.v || "NO_ID";
+                const name = c[COL_NAME]?.v || "Chưa đặt tên";
+                const imei = c[COL_IMEI]?.v ? String(c[COL_IMEI].v).trim() : null;
                 
-                // Key để gộp: Dùng Mã + Tên để tránh trùng lặp
+                // Sửa lỗi giá: Lấy giá trị thô (v) hoặc giá trị hiển thị (f) để xử lý
+                const rawPrice = c[COL_PRICE]?.v || c[COL_PRICE]?.f || 0;
+                const price = parsePrice(rawPrice);
+                
                 const key = id + "_" + name;
 
                 if (!productMap.has(key)) {
                     productMap.set(key, {
                         id: id,
                         name: name,
-                        price: price_raw,
+                        price: price, // Giá đã được xử lý chuẩn
                         imeis: [],
                         source_count: 0
                     });
@@ -247,12 +51,17 @@
                 
                 const p = productMap.get(key);
                 if (imei) p.imeis.push(imei);
+                
+                // Logic phụ: Nếu dòng này có giá > 0 và giá cũ đang = 0 thì cập nhật giá mới
+                if (price > 0 && p.price === 0) {
+                    p.price = price;
+                }
+                
                 p.source_count++;
             });
 
             allProducts = Array.from(productMap.values());
             
-            // UI Update
             statusBar.innerHTML = `<i class="fas fa-check-circle" style="color:green"></i> Đã tải ${allProducts.length} dòng sản phẩm.`;
             searchBox.disabled = false;
             searchBox.focus();
@@ -260,107 +69,6 @@
 
         } catch (e) {
             console.error(e);
-            statusBar.innerHTML = `<span style="color:red">Lỗi kết nối! Vui lòng kiểm tra mạng hoặc quyền truy cập Sheet.</span>`;
+            statusBar.innerHTML = `<span style="color:red">Lỗi: ${e.message}</span>`;
         }
     }
-
-    // 2. HÀM RENDER (Tối ưu UI)
-    function render(data) {
-        if(data.length === 0) {
-            resultArea.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:40px; color:#999">Không tìm thấy sản phẩm nào.</div>`;
-            return;
-        }
-
-        resultArea.innerHTML = data.map(p => {
-            const stock = p.imeis.length;
-            const isStock = stock > 0;
-            
-            // Badge tồn kho
-            const badgeClass = isStock ? 'stock-in' : 'stock-out';
-            const badgeText = isStock ? `Sẵn hàng: ${stock}` : 'Hết hàng';
-            
-            // Xử lý giá: Nếu giá = 0 thì ẩn hoặc hiện "Liên hệ"
-            const displayPrice = p.price > 0 ? p.price.toLocaleString() + 'đ' : 'Liên hệ';
-
-            // Stringify object để truyền vào hàm onclick (Escape kỹ tự đặc biệt)
-            const dataStr = encodeURIComponent(JSON.stringify(p));
-
-            return `
-            <div class="card" onclick="openModal('${dataStr}')">
-                <div class="stock-badge ${badgeClass}">${badgeText}</div>
-                <div class="card-name">${p.name}</div>
-                <div class="card-code">#${p.id}</div>
-                
-                <div class="card-price-group">
-                    <div class="price-sub">Giá bán lẻ</div>
-                    <div class="price-main">${displayPrice}</div>
-                </div>
-            </div>
-            `;
-        }).join('');
-    }
-
-    // 3. TÌM KIẾM (Search Logic)
-    searchBox.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase().trim();
-        const removeTone = str => str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-        const termNoTone = removeTone(term);
-
-        const filtered = allProducts.filter(p => {
-            const nameCheck = removeTone(p.name.toLowerCase()).includes(termNoTone);
-            const idCheck = String(p.id).toLowerCase().includes(term);
-            const imeiCheck = p.imeis.some(i => i.toLowerCase().includes(term));
-            
-            return nameCheck || idCheck || imeiCheck;
-        });
-        
-        render(filtered);
-    });
-
-    // 4. MODAL LOGIC (Chi tiết & Copy)
-    window.openModal = (dataStr) => {
-        const p = JSON.parse(decodeURIComponent(dataStr));
-        
-        document.getElementById('m-name').innerText = p.name;
-        document.getElementById('m-code').innerText = p.id;
-        document.getElementById('m-price-final').innerText = p.price > 0 ? p.price.toLocaleString() + 'đ' : 'Liên hệ';
-        document.getElementById('m-stock').innerText = p.imeis.length;
-
-        // Render List IMEI
-        const imeiContainer = document.getElementById('m-imei-list');
-        if (p.imeis.length > 0) {
-            document.getElementById('m-imei-box').style.display = 'block';
-            imeiContainer.innerHTML = p.imeis.map(imei => `
-                <div class="imei-item">
-                    <span>${imei}</span>
-                    <button class="copy-btn" onclick="copyToClip('${imei}')">COPY</button>
-                </div>
-            `).join('');
-        } else {
-            document.getElementById('m-imei-box').style.display = 'none';
-        }
-
-        modal.classList.add('active');
-    }
-
-    window.closeModalBtn = () => {
-        modal.classList.remove('active');
-    }
-
-    window.closeModal = (e) => {
-        if (e.target === modal) modal.classList.remove('active');
-    }
-
-    window.copyToClip = (text) => {
-        navigator.clipboard.writeText(text).then(() => {
-            // Hiệu ứng visual báo đã copy (Optional)
-            alert("Đã copy IMEI: " + text); 
-        });
-    }
-
-    // Chạy ứng dụng
-    initSystem();
-
-</script>
-</body>
-</html>
