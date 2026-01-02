@@ -2,299 +2,57 @@
 <html lang="vi">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>iStore Inventory - Glass UI</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tạo Mã QR Đơn Giản</title>
     <style>
-        /* --- 1. THIẾT KẾ KÍNH MỜ (GLASSMORPHISM) --- */
-        :root {
-            --primary: #007AFF;
-            --glass-bg: rgba(255, 255, 255, 0.65);
-            --glass-border: 1px solid rgba(255, 255, 255, 0.4);
-            --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
-            --text-main: #1d1d1f;
-            --text-sub: #86868b;
-            --bg-gradient: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            margin: 0; padding: 20px;
-            background: var(--bg-gradient);
-            background-attachment: fixed;
-            color: var(--text-main);
-            min-height: 100vh;
-        }
-
-        /* Hình nền trang trí động */
-        .blob {
-            position: fixed; filter: blur(80px); z-index: -1; opacity: 0.6; animation: float 10s infinite alternate;
-        }
-        .blob-1 { top: -10%; left: -10%; width: 500px; height: 500px; background: #84fab0; border-radius: 40% 60% 70% 30%; }
-        .blob-2 { bottom: -10%; right: -10%; width: 600px; height: 600px; background: #8fd3f4; border-radius: 60% 40% 30% 70%; animation-delay: -5s; }
-        @keyframes float { from { transform: translate(0, 0); } to { transform: translate(30px, 50px); } }
-
-        /* --- 2. HEADER --- */
-        .header {
-            position: sticky; top: 10px; z-index: 100;
-            background: var(--glass-bg);
-            backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-            border: var(--glass-border);
-            box-shadow: var(--glass-shadow);
-            border-radius: 20px;
-            padding: 15px;
-            display: flex; align-items: center; gap: 15px;
-            margin-bottom: 30px;
-        }
-
-        .search-container { position: relative; width: 100%; }
-        .search-icon { position: absolute; left: 15px; top: 50%; transform: translateY(-50%); color: var(--text-sub); }
-        .search-input {
-            width: 100%; padding: 12px 12px 12px 45px;
-            border-radius: 12px; border: 1px solid rgba(255,255,255,0.2);
-            background: rgba(255,255,255,0.5);
-            font-size: 16px; outline: none; transition: 0.3s;
-            box-sizing: border-box;
-        }
-        .search-input:focus { background: #fff; box-shadow: 0 0 0 3px rgba(0,122,255,0.2); }
-
-        /* --- 3. LƯỚI SẢN PHẨM --- */
-        .grid {
-            display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px;
-        }
-
-        .glass-card {
-            background: rgba(255, 255, 255, 0.5);
-            backdrop-filter: blur(10px);
-            border: var(--glass-border);
-            border-radius: 24px; padding: 20px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
-            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-            cursor: pointer; position: relative; overflow: hidden;
-            display: flex; flex-direction: column;
-        }
-        .glass-card:hover {
-            transform: translateY(-8px); background: rgba(255, 255, 255, 0.85);
-            box-shadow: 0 15px 30px rgba(0,0,0,0.1);
-        }
-
-        .badge {
-            position: absolute; top: 15px; right: 15px;
-            padding: 5px 10px; border-radius: 20px;
-            font-size: 11px; font-weight: 800; text-transform: uppercase;
-        }
-        .stock-ok { background: #d1fae5; color: #065f46; }
-        .stock-low { background: #fef3c7; color: #92400e; }
-        .stock-out { background: #fee2e2; color: #991b1b; }
-
-        .card-name { font-size: 17px; font-weight: 700; margin-bottom: 5px; line-height: 1.4; padding-right: 60px; }
-        .card-code { font-size: 12px; font-family: monospace; color: var(--text-sub); background: rgba(0,0,0,0.05); padding: 3px 6px; border-radius: 6px; width: fit-content; margin-bottom: 15px;}
-        
-        .card-price-row { margin-top: auto; display: flex; align-items: baseline; gap: 10px; }
-        .price-main { font-size: 20px; font-weight: 800; color: var(--primary); }
-        .price-old { font-size: 13px; text-decoration: line-through; color: var(--text-sub); }
-
-        /* --- 4. MODAL --- */
-        .modal-overlay {
-            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.3); backdrop-filter: blur(8px);
-            z-index: 200; display: none; justify-content: center; align-items: center;
-        }
-        .modal-overlay.active { display: flex; animation: fadeIn 0.2s; }
-        
-        .glass-modal {
-            width: 90%; max-width: 500px; background: rgba(255, 255, 255, 0.95);
-            border-radius: 30px; padding: 30px;
-            box-shadow: 0 25px 50px rgba(0,0,0,0.25);
-            max-height: 85vh; overflow-y: auto;
-            transform: scale(0.95); animation: zoomIn 0.2s forwards;
-        }
-
-        .imei-box { background: #f5f5f7; border-radius: 16px; padding: 15px; margin-top: 15px; }
-        .imei-row {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 10px; background: #fff; margin-bottom: 8px; border-radius: 10px;
-            font-family: monospace; font-size: 14px; border: 1px solid rgba(0,0,0,0.05);
-        }
-        .copy-btn {
-            background: rgba(0,122,255,0.1); color: var(--primary); border: none;
-            padding: 5px 12px; border-radius: 8px; font-weight: 600; cursor: pointer;
-        }
-        .copy-btn:hover { background: var(--primary); color: #fff; }
-
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes zoomIn { from { transform: scale(0.9); } to { transform: scale(1); } }
-        .loader { text-align: center; margin-top: 20px; font-style: italic; color: #666; }
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f0f2f5; margin: 0; }
+        .container { background: white; padding: 2rem; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; width: 300px; }
+        input { width: 100%; padding: 10px; margin-bottom: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 5px; }
+        button { width: 100%; padding: 10px; background-color: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 5px; }
+        button:hover { background-color: #0056b3; }
+        #qrcode { margin-top: 20px; display: flex; justify-content: center; }
+        #downloadBtn { background-color: #28a745; display: none; margin-top: 15px; }
+        #downloadBtn:hover { background-color: #218838; }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 
-    <div class="blob blob-1"></div>
-    <div class="blob blob-2"></div>
-
-    <div class="header">
-        <div class="search-container">
-            <i class="fas fa-search search-icon"></i>
-            <input type="text" id="search" class="search-input" placeholder="Tìm tên, mã QR, hoặc IMEI..." disabled>
-        </div>
-    </div>
+<div class="container">
+    <h2>Tạo Mã QR</h2>
+    <input type="text" id="text-input" placeholder="Nhập nội dung hoặc link..." />
+    <button onclick="generateQR()">Tạo QR Code</button>
     
-    <div id="loader" class="loader"><i class="fas fa-spinner fa-spin"></i> Đang kết nối dữ liệu kho...</div>
-    <div id="grid" class="grid"></div>
-
-    <div id="modal" class="modal-overlay" onclick="if(event.target===this) closeModal()">
-        <div class="glass-modal">
-            <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                <span id="m-type" style="font-size:11px; font-weight:bold; color:#888; text-transform:uppercase;">CHI TIẾT SẢN PHẨM</span>
-                <button onclick="closeModal()" style="background:#f0f0f0; border:none; width:30px; height:30px; border-radius:50%; cursor:pointer;">✕</button>
-            </div>
-            
-            <h2 id="m-name" style="margin:0 0 5px 0; font-size:20px;"></h2>
-            <div id="m-code" style="font-family:monospace; color:#888; margin-bottom:15px;"></div>
-            
-            <div style="display:flex; align-items:baseline; gap:10px; margin-bottom:20px; padding-bottom:20px; border-bottom:1px dashed #ddd;">
-                <span id="m-price" style="font-size:24px; font-weight:800; color:var(--primary);"></span>
-                <span id="m-price-old" style="text-decoration:line-through; color:#aaa;"></span>
-            </div>
-
-            <div style="font-weight:700; font-size:13px; color:#555; text-transform:uppercase; margin-bottom:10px;">Tình trạng kho</div>
-            <div id="m-content"></div>
-
-            <button onclick="closeModal()" style="width:100%; margin-top:20px; padding:15px; background:#1d1d1f; color:white; border:none; border-radius:15px; font-weight:bold; cursor:pointer;">Đóng</button>
-        </div>
-    </div>
+    <div id="qrcode"></div>
+    <button id="downloadBtn" onclick="downloadQR()">Tải Ảnh Về</button>
+</div>
 
 <script>
-    // --- CẤU HÌNH LIÊN KẾT SHEET ---
-    // ID Sheet của bạn: 1HrBaQHwOKL5wcAphrVS5Kej5s2lKtvRajT__VMCP8WI
-    const SHEET_ID = '1HrBaQHwOKL5wcAphrVS5Kej5s2lKtvRajT__VMCP8WI'; 
-    const SHEET_GID = '0'; // Giả định Web_API là tab đầu tiên (GID=0)
+    let qrcode = new QRCode(document.getElementById("qrcode"), { width: 200, height: 200 });
 
-    let allProducts = [];
-
-    // --- 1. TẢI DỮ LIỆU TỪ GOOGLE SHEET ---
-    async function init() {
-        try {
-            const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&tq&gid=${SHEET_GID}`;
-            const res = await fetch(url);
-            const text = await res.text();
-            const json = JSON.parse(text.substring(47).slice(0, -2));
-
-            // MAP DỮ LIỆU THEO FILE WEB_API.CSV
-            // Cột A(0): Mã SP | B(1): Tên | C(2): Giá NY | D(3): Giá KM
-            // Cột H(7): Tồn Kho | I(8): IMEI
-            allProducts = json.table.rows.map(row => {
-                const c = row.c;
-                if (!c || !c[0]) return null;
-
-                return {
-                    id: c[0]?.v || '',
-                    name: c[1]?.v || 'Chưa đặt tên',
-                    price_list: c[2]?.v || 0,
-                    price_promo: c[3]?.v || 0,
-                    // Cột H (index 7) là Tồn kho
-                    qty: c[7]?.v || 0,
-                    // Cột I (index 8) là IMEI (nếu có)
-                    imeis: c[8]?.v ? String(c[8].v).split(', ') : []
-                };
-            }).filter(i => i);
-
-            document.getElementById('loader').style.display = 'none';
-            document.getElementById('search').disabled = false;
-            render(allProducts);
-
-        } catch (err) {
-            console.error(err);
-            document.getElementById('loader').innerHTML = `<span style="color:red">Lỗi tải dữ liệu. Hãy kiểm tra quyền chia sẻ file Sheet.</span>`;
-        }
+    function generateQR() {
+        let text = document.getElementById("text-input").value;
+        if (!text) return alert("Vui lòng nhập nội dung!");
+        
+        qrcode.clear();
+        qrcode.makeCode(text);
+        
+        // Hiện nút download sau khi tạo
+        setTimeout(() => { document.getElementById("downloadBtn").style.display = "block"; }, 100);
     }
 
-    // --- 2. RENDER GIAO DIỆN ---
-    function render(data) {
-        const grid = document.getElementById('grid');
-        if (data.length === 0) {
-            grid.innerHTML = '<div style="grid-column:1/-1; text-align:center; color:#888;">Không tìm thấy sản phẩm.</div>';
-            return;
+    function downloadQR() {
+        let img = document.querySelector("#qrcode img");
+        if (img && img.src) {
+            let link = document.createElement("a");
+            link.href = img.src;
+            link.download = "qrcode.png";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
-
-        grid.innerHTML = data.map(p => {
-            // Logic Giá
-            const finalPrice = p.price_promo > 0 ? p.price_promo : p.price_list;
-            const hasPromo = p.price_promo > 0 && p.price_promo < p.price_list;
-            
-            // Logic Tồn kho
-            let badgeClass = 'stock-out';
-            if (p.qty > 0) badgeClass = p.qty < 3 ? 'stock-low' : 'stock-ok';
-            const badgeText = p.qty > 0 ? `Sẵn: ${p.qty}` : 'Hết hàng';
-
-            const dataStr = encodeURIComponent(JSON.stringify(p));
-
-            return `
-            <div class="glass-card" onclick="openModal('${dataStr}')">
-                <div class="badge ${badgeClass}">${badgeText}</div>
-                <div class="card-name">${p.name}</div>
-                <div class="card-code">#${p.id}</div>
-                
-                <div class="card-price-row">
-                    <div class="price-main">${finalPrice > 0 ? finalPrice.toLocaleString()+'đ' : 'Liên hệ'}</div>
-                    ${hasPromo ? `<div class="price-old">${p.price_list.toLocaleString()}đ</div>` : ''}
-                </div>
-            </div>`;
-        }).join('');
     }
-
-    // --- 3. TÌM KIẾM ---
-    document.getElementById('search').addEventListener('input', (e) => {
-        const key = e.target.value.toLowerCase().trim();
-        const filtered = allProducts.filter(p => 
-            p.name.toLowerCase().includes(key) || 
-            String(p.id).toLowerCase().includes(key) || 
-            p.imeis.some(i => i.toLowerCase().includes(key))
-        );
-        render(filtered);
-    });
-
-    // --- 4. MODAL CHI TIẾT ---
-    window.openModal = (dataStr) => {
-        const p = JSON.parse(decodeURIComponent(dataStr));
-        
-        document.getElementById('m-name').innerText = p.name;
-        document.getElementById('m-code').innerText = '#' + p.id;
-        
-        const finalPrice = p.price_promo > 0 ? p.price_promo : p.price_list;
-        document.getElementById('m-price').innerText = finalPrice > 0 ? finalPrice.toLocaleString()+'đ' : 'Liên hệ';
-        document.getElementById('m-price-old').innerText = (p.price_promo > 0 && p.price_promo < p.price_list) ? p.price_list.toLocaleString()+'đ' : '';
-
-        const contentDiv = document.getElementById('m-content');
-        
-        // Nếu có IMEI thì hiện danh sách IMEI
-        if (p.imeis.length > 0) {
-            contentDiv.innerHTML = `<div class="imei-box">` + 
-                p.imeis.map(i => `
-                    <div class="imei-row">
-                        <span>${i}</span>
-                        <button class="copy-btn" onclick="copyText('${i}')">COPY</button>
-                    </div>
-                `).join('') + `</div>`;
-        } 
-        // Nếu không có IMEI nhưng còn hàng (Phụ kiện)
-        else if (p.qty > 0) {
-            contentDiv.innerHTML = `
-                <div style="background:#f0f9ff; padding:20px; border-radius:15px; text-align:center; color:#0369a1;">
-                    <div style="font-size:32px; font-weight:800;">${p.qty}</div>
-                    <div style="font-size:12px; text-transform:uppercase;">Số lượng trong kho</div>
-                </div>`;
-        } else {
-            contentDiv.innerHTML = `<div style="text-align:center; color:#999; font-style:italic; padding:20px;">Tạm thời hết hàng</div>`;
-        }
-
-        document.getElementById('modal').classList.add('active');
-    }
-
-    window.closeModal = () => document.getElementById('modal').classList.remove('active');
-    window.copyText = (t) => { navigator.clipboard.writeText(t); alert('Đã copy: ' + t); }
-
-    init();
 </script>
+
 </body>
 </html>
